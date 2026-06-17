@@ -1,0 +1,29 @@
+name: fetch-youtube
+on:
+  workflow_dispatch:
+    inputs:
+      url: { description: "video URL", required: true }
+      name: { description: "out name (no ext)", default: "ytfetch", required: false }
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install yt-dlp + ffmpeg + rclone
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg python3-pip
+          pip3 install -q --upgrade yt-dlp
+          curl -fsSL https://rclone.org/install.sh | sudo bash
+      - name: Restore rclone config
+        env: { RCLONE_CONF: "${{ secrets.RCLONE_CONF }}" }
+        run: { mkdir -p ~/.config/rclone && printf '%s' "$RCLONE_CONF" > ~/.config/rclone/rclone.conf }
+      - name: Download (clean IP, no cookies)
+        run: |
+          yt-dlp -f "b[height<=480]/b" -o "v.%(ext)s" "${{ inputs.url }}"
+          yt-dlp --write-auto-sub --sub-lang en --skip-download -o "v" "${{ inputs.url }}" || true
+          ls -la
+      - name: Push to Drive
+        run: |
+          F=$(ls v.mp4 v.webm v.mkv 2>/dev/null | head -1)
+          rclone copyto "$F" "aicutdrive:_ytfetch/${{ inputs.name }}.${F##*.}"
+          [ -f v.en.vtt ] && rclone copyto v.en.vtt "aicutdrive:_ytfetch/${{ inputs.name }}.vtt" || true
+          echo "pushed ${{ inputs.name }}"
