@@ -1,0 +1,7 @@
+*.mp4
+*.mov
+*.MOV
+*.wav
+*.conf
+rclone.conf
+__pycache__/

@@ -1,0 +1,32 @@
+name: render
+on:
+  workflow_dispatch:
+    inputs:
+      note: { description: "label for this run", default: "ci render test", required: false }
+jobs:
+  render:
+    runs-on: ubuntu-latest   # 4-core / 16GB, unlimited minutes on a public repo
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ffmpeg + rclone
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          curl -fsSL https://rclone.org/install.sh | sudo bash
+          echo "cores: $(nproc)"; ffmpeg -version | head -1; rclone version | head -1
+      - name: Restore rclone config from secret
+        env:
+          RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+        run: |
+          mkdir -p ~/.config/rclone
+          printf '%s' "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
+          chmod 600 ~/.config/rclone/rclone.conf
+      - name: Verify Drive access (folder names only)
+        run: rclone lsd "aicutdrive:" | awk '{print $NF}' | head -20
+      - name: Render smoke test (prove ffmpeg renders on the runner)
+        run: |
+          ffmpeg -y -f lavfi -i testsrc=size=2560x1440:rate=24:duration=5 \
+                 -f lavfi -i sine=frequency=440:duration=5 \
+                 -c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p -c:a aac out.mp4
+          ffprobe -v error -show_entries format=duration -of csv=p=0 out.mp4
+      - name: Push result back to Drive
+        run: rclone copyto out.mp4 "aicutdrive:aicut-render-ci/ci_test_${{ github.run_number }}.mp4" && echo "pushed -> aicut-render-ci/ci_test_${{ github.run_number }}.mp4"
